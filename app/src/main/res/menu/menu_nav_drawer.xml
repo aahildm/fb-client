@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <group android:checkableBehavior="none">
+        <item android:id="@+id/nav_home" android:title="Home" android:icon="@drawable/ic_home" />
+        <item android:id="@+id/nav_new_tab" android:title="New Tab" android:icon="@drawable/ic_tabs" />
+        <item android:id="@+id/nav_private_tab" android:title="New Private Tab" android:icon="@drawable/ic_private" />
+    </group>
+
+    <group android:checkableBehavior="none">
+        <item android:id="@+id/nav_bookmarks" android:title="Bookmarks" android:icon="@drawable/ic_bookmark" />
+        <item android:id="@+id/nav_history" android:title="History" android:icon="@drawable/ic_history" />
+    </group>
+
+    <group android:checkableBehavior="none">
+        <item android:id="@+id/nav_extensions" android:title="Extensions" android:icon="@drawable/ic_extensions" />
+        <item android:id="@+id/nav_settings" android:title="Settings" android:icon="@drawable/ic_settings" />
+        <item android:id="@+id/nav_clear_data" android:title="Clear Browsing Data" android:icon="@drawable/ic_delete" />
+    </group>
+
+</menu>
