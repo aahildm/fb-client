@@ -1,0 +1,117 @@
+name: Build & Release APK
+
+on:
+  push:
+    tags:
+      - 'v*'           # triggers on v1.0.0, v1.2.3, etc.
+  workflow_dispatch:   # allows manual trigger from GitHub Actions UI
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout code
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. JDK 17
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      # 3. Cache Gradle
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      # 4. Grant execute permission for gradlew
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      # 5. Build release APK (unsigned – suitable for sideloading)
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --stacktrace
+
+      # 6. Sign APK using keystore stored as GitHub Secret
+      #    To sign: add KEYSTORE_BASE64, KEY_ALIAS, KEY_PASSWORD, STORE_PASSWORD
+      #    to your repo Secrets. If not set, unsigned APK is released.
+      - name: Sign APK
+        if: ${{ env.KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > keystore.jks
+          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+            --ks keystore.jks \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass pass:"$STORE_PASSWORD" \
+            --key-pass pass:"$KEY_PASSWORD" \
+            --out app/build/outputs/apk/release/fb-client-signed.apk \
+            app/build/outputs/apk/release/app-release.apk
+          rm keystore.jks
+
+      # 7. Rename unsigned APK for clarity
+      - name: Rename APK
+        run: |
+          cd app/build/outputs/apk/release/
+          # Use signed if available, otherwise rename unsigned
+          if [ -f fb-client-signed.apk ]; then
+            echo "APK_PATH=app/build/outputs/apk/release/fb-client-signed.apk" >> $GITHUB_ENV
+          else
+            mv app-release.apk fb-client-${{ github.ref_name }}.apk || true
+            echo "APK_PATH=app/build/outputs/apk/release/fb-client-${{ github.ref_name }}.apk" >> $GITHUB_ENV
+          fi
+
+      # 8. Upload APK as workflow artifact (always available)
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fb-client-apk
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 30
+
+      # 9. Create GitHub Release with APK attached (only on tag push)
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: FB Client ${{ github.ref_name }}
+          body: |
+            ## FB Client ${{ github.ref_name }}
+
+            GeckoView-based Facebook client with extension support.
+
+            ### What's included
+            - GeckoView engine (Firefox-based)
+            - Extension support (install any Firefox addon from addons.mozilla.org)
+            - Multi-tab browsing
+            - Private/incognito tabs
+            - Bookmarks & history
+            - Download manager
+            - Dark mode
+            - Desktop/mobile user agent switching
+            - Pull to refresh
+            - Find in page
+            - Share & copy URL
+
+            ### Install
+            Download the APK below, enable "Install from unknown sources" in Android settings, and install.
+          files: |
+            app/build/outputs/apk/release/*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

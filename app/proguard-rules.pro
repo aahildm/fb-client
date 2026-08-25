@@ -1,0 +1,5 @@
+-keep class org.mozilla.geckoview.** { *; }
+-keep class com.fbclient.app.extensions.** { *; }
+-dontwarn org.mozilla.**
+-keepattributes *Annotation*
+-keepattributes SourceFile,LineNumberTable
