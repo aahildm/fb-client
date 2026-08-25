@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory android:title="Browsing">
+
+        <ListPreference
+            android:key="ua_mode"
+            android:title="User Agent Mode"
+            android:summary="Select how the browser identifies itself"
+            android:entries="@array/ua_mode_entries"
+            android:entryValues="@array/ua_mode_values"
+            android:defaultValue="0"
+            app:useSimpleSummaryProvider="false" />
+
+        <EditTextPreference
+            android:key="home_url"
+            android:title="Home URL"
+            android:defaultValue="https://www.facebook.com"
+            app:useSimpleSummaryProvider="true" />
+
+        <SwitchPreferenceCompat
+            android:key="js_enabled"
+            android:title="JavaScript"
+            android:defaultValue="true" />
+
+        <SwitchPreferenceCompat
+            android:key="save_cookies"
+            android:title="Save Cookies"
+            android:defaultValue="true" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="Privacy">
+
+        <SwitchPreferenceCompat
+            android:key="adblock_enabled"
+            android:title="Block Ads (via extensions)"
+            android:defaultValue="true" />
+
+        <SwitchPreferenceCompat
+            android:key="notifications_enabled"
+            android:title="Allow Notifications"
+            android:defaultValue="true" />
+
+        <Preference
+            android:key="clear_data"
+            android:title="Clear Browsing Data"
+            android:summary="Clear history and cache" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="Appearance">
+
+        <SwitchPreferenceCompat
+            android:key="dark_mode"
+            android:title="Dark Mode"
+            android:defaultValue="true" />
+
+    </PreferenceCategory>
+
+</PreferenceScreen>
