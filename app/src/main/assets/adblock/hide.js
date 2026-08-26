@@ -1,210 +1,142 @@
 (function() {
   'use strict';
 
+  /* ========== CONFIG ========== */
   var cfg = window._fbc || {};
   var hideAds     = cfg.adblock       !== false;
   var hideStories = cfg.block_stories !== false;
   var hideStatus  = cfg.block_status  !== false;
   var hidePymk    = cfg.block_pymk    !== false;
 
-  var hiddenEls = [];
+  // Multilingual ad-label dictionary (keys pre-normalized: lowercase,
+  // whitespace/separators stripped). Extend freely.
+  var AD_LABELS = {};
+  ['ad','ads','sponsored','suggestedpost','paidpartnership',      // EN
+   'anzeige','gesponsert',                                        // DE
+   'publicité','sponsorisé',                                      // FR
+   'publicidad','patrocinado',                                    // ES
+   'pubblicità','sponsorizzato',                                  // IT
+   'advertentie',                                                 // NL
+   'reklama','реклама','reklam',                                  // PL/RU/TR
+   '広告','广告','광고','quảngcáo','إعلان','مموّل'                 // CJK/VI/AR
+  ].forEach(function(k){ AD_LABELS[k] = true; });
 
+  var PYMK_LABELS = {};
+  ['peopleyoumayknow','suggestforYou'.toLowerCase(),'suggestedforyou',
+   'vorschlägefürdich','suggerimenti per te'.replace(/\s/g,'')
+  ].forEach(function(k){ PYMK_LABELS[k] = true; });
+
+  var MAX_NODES_PER_SCAN = 15000;   // hard CPU budget
+
+  /* ========== NORMALIZATION (kills obfuscation) ========== */
+  function norm(s) {
+    return String(s || '')
+      .toLowerCase()
+      .replace(/[\u200B-\u200F\u2060\uFEFF\u180E]/g, '')  // zero-width tricks
+      .replace(/[\s\u00B7\u2022\u2027\u30FB\u2219\u22C5\-–—_]+/g, ''); // sep junk
+  }
+
+  function isAdLabelText(rawText) {
+    var t = norm(rawText);
+    if (!t || t.length > 16) return false;         // long strings ≠ labels
+    if (AD_LABELS[t]) return true;
+    // tolerate one extra trailing char, e.g. "Ad*" or "Sponsored."
+    return t.length <= 11 && AD_LABELS[t.slice(0, -1)];
+  }
+
+  /* ========== VISIBILITY (cached, no IE cruft) ========== */
+  var HAS_CHECKVIS = typeof Element !== 'undefined' &&
+                     Element.prototype.checkVisibility;
+
+  function isVisible(el) {
+    if (HAS_CHECKVIS) {
+      try { return el.checkVisibility(); } catch(e) {}
+    }
+    var cs = window.getComputedStyle(el);
+    return cs.display !== 'none' &&
+           cs.visibility !== 'hidden' &&
+           cs.opacity !== '0';
+  }
+
+  /* ========== HIDING via data attribute (idempotent, debuggable) ========== */
   function hideEl(el) {
     if (!el || el === document.body || el === document.documentElement) return;
-    for (var i = 0; i < hiddenEls.length; i++) if (hiddenEls[i] === el) return;
-    hiddenEls.push(el);
-    el.style.cssText += ';display:none!important';
+    el.setAttribute('data-fbc-hidden', '');
   }
 
-  // CSS injection
-  function injectCSS() {
-    var s = document.getElementById('_fbc');
-    if (!s) {
-      s = document.createElement('style');
-      s.id = '_fbc';
-      var head = document.head || document.getElementsByTagName('head')[0] || document.documentElement;
-      head.appendChild(s);
-    }
-    var css = '';
-    if (hideStories) css += '[data-pagelet="Stories"]{display:none!important}[aria-label="Stories"]{display:none!important}';
-    if (hideStatus)  css += '[data-pagelet="FeedComposer"]{display:none!important}';
-    s.textContent = css;
+  /* ========== STRUCTURE HELPERS ========== */
+  function getFeed() {
+    return document.querySelector(
+      'div[role="feed"],[data-pagelet="MainFeed"],[data-testid="newsFeed"]');
   }
 
-  // Hide open app buttons
-  function hideOpenApp() {
-    var els = document.querySelectorAll('a,button');
-    for (var i = 0; i < els.length; i++) {
-      var t = els[i].textContent.trim();
-      if (t === 'Open app' || t === 'Open App') els[i].style.cssText += ';display:none!important';
-    }
-    if (document.body) document.body.style.paddingBottom = '0';
-  }
-
-  // Check if text is an ad label
-  function isAdLabel(text) {
-    var t = (text || '').trim();
-    return t === 'Ad' || t === 'Sponsored' || t === 'Suggested Post' || t === 'Paid partnership';
-  }
-
-  // Walk all text nodes — most compatible approach, works on all WebView versions
-  function findAdLabel(root) {
-    var result = null;
-    function walk(node) {
-      if (result) return;
-      if (node.nodeType === 3) { // text node
-        if (isAdLabel(node.textContent)) {
-          // Check parent is visible
-          var p = node.parentElement;
-          if (p) {
-            var cs = p.currentStyle || window.getComputedStyle(p);
-            if (cs.display !== 'none' && cs.visibility !== 'hidden') {
-              result = p;
-            }
-          }
-        }
-        return;
-      }
-      if (node.nodeType !== 1) return;
-      // Skip hidden nodes
-      var cs = node.currentStyle || window.getComputedStyle(node);
-      if (cs.display === 'none' || cs.visibility === 'hidden') return;
-      for (var i = 0; i < node.childNodes.length; i++) walk(node.childNodes[i]);
-    }
-    walk(root);
-    return result;
-  }
-
-  // Get direct child of feed containing element
-  function getFeedChild(el, feed) {
+  // climb to the direct child of `feed`, or nearest [role=article] fallback
+  function getUnit(el, feed) {
     var p = el;
     while (p && p.parentElement) {
       if (p.parentElement === feed) return p;
-      if (p.parentElement === document.body) return null;
+      if (p.parentElement === document.body) break;
+      if (p.getAttribute && p.getAttribute('role') === 'article' && feed)
+        return p;                                    // non-feed contexts (video, reels)
       p = p.parentElement;
+    }
+    return null;
+  }
+
+  // strong server-side tell: "Sponsored"/label links point into /ads/
+  function hasAdHref(unit) {
+    var links = unit.querySelectorAll('a[href]');
+    for (var i = 0; i < Math.min(links.length, 12); i++) {
+      var h = links[i].getAttribute('href');
+      if (h && (h.indexOf('/ads/about') === 0 ||
+                h.indexOf('/ads/') !== -1 ||
+                h.indexOf('ad_preferences') !== -1)) return true;
+    }
+    return false;
+  }
+
+  /* ========== SCANNER ========== */
+  var activeWalkRoot = null;
+
+  function walk(node, feed, budget) {
+    while (node) {
+      if (++budget.used > MAX_NODES_PER_SCAN) return null;
+
+      if (node.nodeType === 3) {                      // TEXT NODE
+        if (isAdLabelText(node.textContent)) {
+          var p = node.parentElement;
+          if (p && isVisible(p)) return p;
+        }
+      } else if (node.nodeType === 1) {
+        if (!isVisible(node)) {                        // prune whole subtree
+          node = nextSkippable(node, feed);
+          continue;
+        }
+        var aria = node.getAttribute && node.getAttribute('aria-label');
+        if (aria && isAdLabelText(aria)) return node;
+        if (node.firstChild) return walk(node.firstChild, feed, budget);
+      }
+      node = nextNode(node, feed);
+    }
+    return null;
+  }
+
+  // iterative sibling climb — no deep recursion, aborts cleanly on match
+  function nextNode(node, feed) {
+    if (node.nextSibling) return node.nextSibling;
+    var p = node.parentNode;
+    while (p && p !== activeWalkRoot) {
+      if (p.nextSibling) return p.nextSibling;
+      p = p.parentNode;
     }
     return null;
   }
 
   function scanFeed() {
     if (!hideAds || !document.body) return;
+    var feed = getFeed();
 
-    // Try multiple feed selectors for compatibility
-    var feed = document.querySelector('div[role="feed"]') ||
-               document.querySelector('[data-pagelet="Feed"]') ||
-               document.querySelector('[data-testid="Keycommand_wrapper_news_feed"]');
-    if (!feed) return;
-
-    var items = feed.children;
-    for (var i = 0; i < items.length; i++) {
-      var item = items[i];
-      if (item.style.display === 'none') continue;
-
-      // Method 1: aria-label
-      if (item.querySelector('[aria-label="Sponsored"],[aria-label="Ad"]')) {
-        hideEl(item); continue;
-      }
-
-      // Method 2: Walk text nodes
-      var adEl = findAdLabel(item);
-      if (adEl) { hideEl(item); continue; }
-
-      // Method 3: innerHTML contains common ad patterns
-      var html = item.innerHTML;
-      if (html.indexOf('>Ad<') >= 0 || html.indexOf('>Sponsored<') >= 0 ||
-          html.indexOf('">Ad"') >= 0 || html.indexOf('"Sponsored"') >= 0) {
-        // Verify it's not a comment or quote
-        var spans = item.querySelectorAll('span,a');
-        for (var j = 0; j < spans.length; j++) {
-          if (isAdLabel(spans[j].textContent)) {
-            hideEl(item); break;
-          }
-        }
-      }
-    }
-
-    // PYMK
-    if (hidePymk) {
-      var pymkList = ['People You May Know','People you may know','Suggested for You'];
-      var allSpans = feed.querySelectorAll('span,h2,h3,h4');
-      for (var k = 0; k < allSpans.length; k++) {
-        var t = allSpans[k].textContent.trim();
-        for (var m = 0; m < pymkList.length; m++) {
-          if (t === pymkList[m]) {
-            var fi = getFeedChild(allSpans[k], feed);
-            if (fi) hideEl(fi);
-            break;
-          }
-        }
-      }
-    }
-  }
-
-  function scanVideoAds() {
-    if (!hideAds || !document.body) return;
-    var spans = document.body.querySelectorAll('span,a');
-    for (var i = 0; i < spans.length; i++) {
-      var el = spans[i];
-      if (el.childElementCount > 0) continue;
-      if (!isAdLabel(el.textContent)) continue;
-      var cs = el.currentStyle || window.getComputedStyle(el);
-      if (cs.display === 'none' || cs.visibility === 'hidden') continue;
-      // Walk up — hide small container only
-      var p = el.parentElement;
-      for (var j = 0; j < 10; j++) {
-        if (!p || p === document.body) break;
-        var role = p.getAttribute ? p.getAttribute('role') : null;
-        if (role === 'feed') break;
-        var h = p.offsetHeight; var w = p.offsetWidth;
-        if (w > window.innerWidth * 0.4 && h > 30 && h < window.innerHeight * 0.5) {
-          hideEl(p); break;
-        }
-        p = p.parentElement;
-      }
-    }
-  }
-
-  function watchFeed() {
-    var feed = document.querySelector('div[role="feed"]');
-    if (!feed || feed._w) return !!feed;
-    feed._w = true;
-    if (window.MutationObserver) {
-      var t;
-      new MutationObserver(function() {
-        clearTimeout(t); t = setTimeout(scanFeed, 500);
-      }).observe(feed, {childList: true});
-    }
-    return true;
-  }
-
-  function run() {
-    injectCSS();
-    hideOpenApp();
-    scanFeed();
-    scanVideoAds();
-  }
-
-  run();
-  if (document.addEventListener) {
-    document.addEventListener('DOMContentLoaded', run);
-  }
-
-  var lastUrl = window.location.href;
-  var poll = setInterval(function() {
-    var cur = window.location.href;
-    if (cur !== lastUrl) {
-      lastUrl = cur;
-      setTimeout(scanVideoAds, 400);
-      setTimeout(scanVideoAds, 1000);
-    }
-    run();
-    watchFeed();
-  }, 1000);
-
-  // Stop polling after 30s to save battery
-  setTimeout(function() { clearInterval(poll); }, 30000);
-
-  // Keep running for infinite scroll
-  setInterval(run, 5000);
-
-})();
+    var roots = [];
+    if (feed) {
+      roots.push(feed);
+    } else {
