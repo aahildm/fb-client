@@ -1,0 +1,124 @@
+name: Build APK
+
+on:
+  push:
+    branches:
+      - main        # every push to main builds APK as artifact (no release)
+  workflow_dispatch:
+    inputs:
+      make_release:
+        description: 'Create a GitHub Release?'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      release_name:
+        description: 'Release name (e.g. v1.2)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --stacktrace 2>&1 | tee build.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 3
+
+      - name: Show log tail
+        if: always()
+        run: tail -30 build.log
+
+      # Sign APKs if keystore secrets are set
+      - name: Sign APKs
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "No keystore — skipping signing"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > keystore.jks
+          for apk in app/build/outputs/apk/release/*.apk; do
+            name=$(basename "$apk" .apk)
+            signed="app/build/outputs/apk/release/${name}-signed.apk"
+            $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+              --ks keystore.jks \
+              --ks-key-alias "$KEY_ALIAS" \
+              --ks-pass pass:"$STORE_PASSWORD" \
+              --key-pass pass:"$KEY_PASSWORD" \
+              --out "$signed" "$apk"
+          done
+          rm keystore.jks
+
+      - name: List APKs
+        run: ls -lh app/build/outputs/apk/release/
+
+      # Always upload APK as artifact — download from Actions tab
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: fb-client-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: warn
+          retention-days: 7
+
+      # Only create a GitHub Release when manually triggered with make_release=true
+      - name: Create GitHub Release
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.make_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_name || format('release-{0}', github.run_number) }}
+          name: FB Client ${{ github.event.inputs.release_name || github.run_number }}
+          body: |
+            ## FB Client ${{ github.event.inputs.release_name }}
+            GeckoView-based Facebook client with extension support.
+
+            ### Download the right APK:
+            - **arm64-v8a** → Most modern phones (Redmi, Samsung, Pixel)
+            - **armeabi-v7a** → Older 32-bit phones
+            - **x86_64** → Emulators only
+          files: app/build/outputs/apk/release/*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

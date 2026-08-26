@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FB Client</string>
+    <string name="settings">Settings</string>
+    <string name="extensions">Extensions</string>
+    <string name="bookmarks">Bookmarks</string>
+    <string name="history">History</string>
+    <string name="download_started">Download started…</string>
+
+    <!-- UA mode spinner -->
+    <string-array name="ua_mode_entries">
+        <item>Mobile (Firefox)</item>
+        <item>Desktop (Firefox)</item>
+        <item>Facebook App</item>
+    </string-array>
+    <string-array name="ua_mode_values">
+        <item>0</item>
+        <item>1</item>
+        <item>2</item>
+    </string-array>
+
+    <string-array name="theme_entries">
+        <item>Default Blue</item>
+        <item>Dark</item>
+        <item>AMOLED Black</item>
+    </string-array>
+    <string-array name="theme_values">
+        <item>0</item>
+        <item>1</item>
+        <item>2</item>
+    </string-array>
+</resources>

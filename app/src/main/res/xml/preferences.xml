@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory android:title="General">
+        <EditTextPreference
+            android:key="home_url"
+            android:title="Home URL"
+            android:defaultValue="https://www.facebook.com"
+            app:useSimpleSummaryProvider="false"/>
+
+        <ListPreference
+            android:key="theme"
+            android:title="Theme"
+            android:entries="@array/theme_entries"
+            android:entryValues="@array/theme_values"
+            android:defaultValue="0"
+            app:useSimpleSummaryProvider="true"/>
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="Security">
+        <Preference
+            android:key="app_lock_pin"
+            android:title="App Lock PIN"
+            android:summary="Not set"/>
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="Browsing">
+        <SwitchPreferenceCompat
+            android:key="js_enabled"
+            android:title="JavaScript"
+            android:defaultValue="true"/>
+
+        <Preference
+            android:key="clear_data"
+            android:title="Clear All Data"/>
+    </PreferenceCategory>
+
+</PreferenceScreen>

@@ -1,0 +1,21 @@
+{
+  "manifest_version": 2,
+  "name": "FB Client Filters",
+  "version": "1.0",
+  "description": "Hides Facebook ads and clutter",
+  "content_scripts": [
+    {
+      "matches": ["*://*.facebook.com/*", "*://facebook.com/*"],
+      "css": ["hide.css"],
+      "js": ["hide.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "adblock@fbclient.app",
+      "strict_min_version": "115.0"
+    }
+  }
+}
