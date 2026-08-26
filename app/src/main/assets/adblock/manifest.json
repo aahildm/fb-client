@@ -1,14 +1,13 @@
 {
   "manifest_version": 2,
   "name": "FB Client Filters",
-  "version": "1.0",
-  "description": "Hides Facebook ads and clutter",
+  "version": "1.1",
+  "description": "Optimized Facebook filters for Infinix/XOS devices",
   "content_scripts": [
     {
       "matches": ["*://*.facebook.com/*", "*://facebook.com/*"],
-      "css": ["hide.css"],
       "js": ["hide.js"],
-      "run_at": "document_start",
+      "run_at": "document_idle",
       "all_frames": false
     }
   ],
@@ -17,5 +16,15 @@
       "id": "adblock@fbclient.app",
       "strict_min_version": "115.0"
     }
+  },
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "options_ui": {
+    "page": "options.html"
+  },
+  "browser_action": {
+    "default_title": "FB Client Settings"
   }
 }
