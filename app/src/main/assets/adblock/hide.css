@@ -1,34 +1,21 @@
-/* === Facebook Ad Hiding === */
+/* Purely static, JS-independent baseline */
 
-/* Sponsored posts - multiple selectors for different FB layouts */
-[aria-label="Sponsored"],
-[aria-label="Sponsored story"],
-a[aria-label="Sponsored"],
-span[aria-label="Sponsored"] {
+/* Static section kill-list (data-pagelets change rarely) */
+[data-pagelet="Reels"],
+[data-pagelet="VideosYouMightLike"],
+[data-pagelet="RightRail"] ins,
+[data-pagelet="RightRail"] iframe,
+[data-pagelet="PymlRecommendations"] {
   display: none !important;
 }
 
-/* Hide the entire feed unit containing a Sponsored label */
-div[role="article"]:has(span:contains("Sponsored")),
-div[role="article"]:has(a[aria-label="Sponsored"]) {
-  display: none !important;
+/* Case-insensitive aria match (CSS Selectors 4 flag, Chrome/WebView 65+) */
+[role="article"] a[aria-label="sponsored" i] { pointer-events: none; }
+
+/* Progressive enhancement — safe on old WebViews, skipped elsewhere */
+@supports selector(:has(a[href])) {
+  div[role="article"]:has(a[href*="/ads/about"]),
+  div[role="article"]:has([aria-label="Sponsored"]) {
+    display: none !important;
+  }
 }
-
-/* Stories bar at top */
-[data-pagelet="Stories"] { display: none !important; }
-[aria-label="Stories"] { display: none !important; }
-
-/* Reels sections */
-[data-pagelet="Reels"] { display: none !important; }
-[data-pagelet="VideosYouMightLike"] { display: none !important; }
-[aria-label="Reels"] { display: none !important; }
-
-/* Status composer box */
-[data-pagelet="FeedComposer"] { display: none !important; }
-
-/* Right column ads */
-[data-pagelet="RightRail"] ins { display: none !important; }
-[data-pagelet="RightRail"] iframe { display: none !important; }
-
-/* People you may know widget */
-[data-pagelet="PymlRecommendations"] { display: none !important; }
